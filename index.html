@@ -9,51 +9,58 @@
             font-family: Arial, sans-serif;
             margin: 20px;
         }
-        #status {
-            margin-top: 20px;
+        h1 {
+            color: #4CAF50;
         }
-        #barcode-list {
-            margin-top: 20px;
+        button {
+            background-color: #008CBA;
+            color: white;
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            margin: 20px 0;
+        }
+        button:hover {
+            background-color: #007B9F;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        li {
+            background: #f4f4f4;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        #status {
+            color: red;
+            font-weight: bold;
         }
     </style>
 </head>
 <body>
 
     <h1>Barcode Scanner</h1>
-    <button id="connectBtn">Connect to Barcode Scanner</button>
-    <div id="status"></div>
+    <button id="connectButton">Connect to Barcode Scanner</button>
+    <p id="status">Status: Not connected</p>
+
     <h2>Scanned Barcodes</h2>
-    <ul id="barcode-list"></ul>
+    <ul id="barcodeList">
+        <!-- Scanned barcode list will be shown here -->
+    </ul>
 
-    <script>
-        // EventEmitter Implementation
-        class EventEmitter {
-            constructor() {
-                this.events = {};
-            }
+    <script type="module">
+        import EventEmitter from 'event-emitter.js';  // EventEmitter to handle custom events
+        import { Aim, GS1, Detector } from '@point-of-sale/barcode-parser';  // Barcode parsers
 
-            on(event, listener) {
-                if (!this.events[event]) {
-                    this.events[event] = [];
-                }
-                this.events[event].push(listener);
-            }
-
-            emit(event, ...args) {
-                if (this.events[event]) {
-                    this.events[event].forEach(listener => listener(...args));
-                }
-            }
-        }
-
-        // WebSerialBarcodeScanner Class
         const END_OF_TRANSMISSION_TIMEOUT = 300;
 
         class WebSerialBarcodeScanner {
-
             #options;
             #internal;
-
+        
             constructor(options) {
                 this.#options = Object.assign({
                     baudRate: 9600,
@@ -83,6 +90,7 @@
             async connect() {
                 try {
                     let port = await navigator.serial.requestPort();
+                    console.log("Port requested:", port);
 
                     if (port) {
                         await this.open(port);
@@ -137,13 +145,16 @@
                 });
 
                 let buffer = [];
+                console.log("Port opened, ready to read data");
 
                 while (port.readable) {
                     this.#internal.reader = port.readable.getReader();
+                    console.log("Reader acquired");
 
                     try {
                         while (true) {
                             const { value, done } = await this.#internal.reader.read();
+                            console.log("Data read:", value);
 
                             if (this.#internal.timeout) {
                                 clearTimeout(this.#internal.timeout);
@@ -152,10 +163,12 @@
 
                             if (done) {
                                 this.#internal.reader.releaseLock();
+                                console.log("Done reading data");
                                 break;
                             }
 
                             if (value) {
+                                console.log("Buffering data:", value);
                                 buffer.push(...value);
                             }
 
@@ -165,7 +178,7 @@
                             }, END_OF_TRANSMISSION_TIMEOUT);
                         }
                     } catch (error) {
-                        console.log('error', error);
+                        console.log('Error reading data:', error);
                         buffer = [];
                     }
                 }
@@ -179,6 +192,8 @@
                     ]
                 };
 
+                console.log("Parsed value:", result.value);
+
                 if (result.value.endsWith('\n')) {
                     result.value = result.value.slice(0, -1);
                 }
@@ -188,6 +203,7 @@
                 }
 
                 // Check for barcode and emit data
+                console.log("Emitting barcode:", result.value);
                 this.#internal.emitter.emit('barcode', result);
             }
 
@@ -196,33 +212,25 @@
             }
         }
 
-        // Create instance of WebSerialBarcodeScanner
-        let barcodeScanner = new WebSerialBarcodeScanner({
+        // Create a WebSerialBarcodeScanner instance
+        const barcodeScanner = new WebSerialBarcodeScanner({
+            baudRate: 9600,
             guessSymbology: true,
-            allowedSymbologies: ['EAN13', 'EAN8', 'QR']
         });
 
-        // Connect to the barcode scanner
-        document.getElementById('connectBtn').addEventListener('click', async () => {
-            await barcodeScanner.connect();
-        });
-
-        // Listen for barcode data
+        // Event listener to handle the barcode event
         barcodeScanner.addEventListener('barcode', (data) => {
-            const barcodeList = document.getElementById('barcode-list');
+            console.log("Received barcode:", data.value);
+            const barcodeList = document.getElementById('barcodeList');
             const barcodeItem = document.createElement('li');
             barcodeItem.textContent = `Scanned: ${data.value}`;
             barcodeList.appendChild(barcodeItem);
         });
 
-        // Listen for connection events
-        barcodeScanner.addEventListener('connected', (event) => {
-            document.getElementById('status').textContent = `Connected to Barcode Scanner: Vendor ID: ${event.vendorId}, Product ID: ${event.productId}`;
-        });
-
-        // Listen for disconnection events
-        barcodeScanner.addEventListener('disconnected', () => {
-            document.getElementById('status').textContent = 'Disconnected from Barcode Scanner.';
+        // Event listener for the connect button
+        document.getElementById('connectButton').addEventListener('click', () => {
+            barcodeScanner.connect();
+            document.getElementById('status').textContent = "Status: Connecting...";
         });
     </script>
 
