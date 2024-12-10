@@ -23,9 +23,17 @@
         // Assuming the connection to the serial port has already been established
         async function startReading() {
             try {
-                // Assuming the port is already connected and opened
+                // Request the serial port (if it's not already open)
                 port = await navigator.serial.requestPort(); // Only request port if not already connected
-                await port.open({ baudRate: 9600 }); // Open the port
+
+                // Open the port with configuration settings from your XML (baudRate, parity, dataBits, etc.)
+                await port.open({
+                    baudRate: 9600,
+                    dataBits: 7,
+                    stopBits: 1,
+                    parity: 'odd',
+                    flowControl: 'none', // Or 'Xon/Xoff' if needed
+                });
 
                 // Update the status to "Connected"
                 statusElement.textContent = 'Status: Connected';
