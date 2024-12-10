@@ -3,235 +3,79 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Barcode Scanner</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-        h1 {
-            color: #4CAF50;
-        }
-        button {
-            background-color: #008CBA;
-            color: white;
-            padding: 10px 20px;
-            font-size: 16px;
-            border: none;
-            cursor: pointer;
-            margin: 20px 0;
-        }
-        button:hover {
-            background-color: #007B9F;
-        }
-        ul {
-            list-style-type: none;
-            padding: 0;
-        }
-        li {
-            background: #f4f4f4;
-            padding: 10px;
-            margin-bottom: 10px;
-            border-radius: 5px;
-        }
-        #status {
-            color: red;
-            font-weight: bold;
-        }
-    </style>
+    <title>RS232 Barcode Scanner</title>
 </head>
 <body>
 
-    <h1>Barcode Scanner</h1>
-    <button id="connectButton">Connect to Barcode Scanner</button>
+    <h1>RS232 Barcode Scanner</h1>
+    <button id="connectButton">Connect to Scanner</button>
     <p id="status">Status: Not connected</p>
+    <h3>Scanned Barcode:</h3>
+    <p><strong id="barcode">None</strong></p> <!-- This will display the scanned barcode -->
 
-    <h2>Scanned Barcodes</h2>
-    <ul id="barcodeList">
-        <!-- Scanned barcode list will be shown here -->
-    </ul>
+    <script>
+        let port;
+        let reader;
+        let decoder;
+        let decoderStream;
+        const statusElement = document.getElementById("status");
+        const barcodeElement = document.getElementById("barcode");
 
-    <script type="module">
-        import EventEmitter from './event-emitter.js';  // EventEmitter to handle custom events
-        import { Aim, GS1, Detector } from '@point-of-sale/barcode-parser';  // Barcode parsers
+        // Connect to the serial port
+        document.getElementById('connectButton').addEventListener('click', async () => {
+            try {
+                // Request the user to connect to the serial port
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 9600 });  // Open the port at 9600 baud rate
 
-        const END_OF_TRANSMISSION_TIMEOUT = 300;
+                statusElement.textContent = 'Status: Connected';
 
-        class WebSerialBarcodeScanner {
-            #options;
-            #internal;
-        
-            constructor(options) {
-                this.#options = Object.assign({
-                    baudRate: 9600,
-                    bufferSize: 255,
-                    dataBits: 8,
-                    flowControl: 'none',
-                    parity: 'none',
-                    stopBits: 1,
-                    guessSymbology: false,
-                    allowedSymbologies: [],
-                }, options);
+                // Create a reader for the port
+                reader = port.readable.getReader();
 
-                this.#internal = {
-                    emitter: new EventEmitter(),
-                    port: null,
-                    reader: null,
-                    timeout: null
-                };
-
-                navigator.serial.addEventListener('disconnect', event => {
-                    if (this.#internal.port == event.target) {
-                        this.#internal.emitter.emit('disconnected');
-                    }
-                });
-            }
-
-            async connect() {
-                try {
-                    let port = await navigator.serial.requestPort();
-                    console.log("Port requested:", port);
-
-                    if (port) {
-                        await this.open(port);
-                    }
-                } catch (error) {
-                    console.log('Could not connect! ' + error);
-                    document.getElementById('status').textContent = "Failed to connect to device.";
-                }
-            }
-
-            async reconnect(previousPort) {
-                if (!previousPort.vendorId || !previousPort.productId) {
-                    return;
-                }
-
-                let ports = await navigator.serial.getPorts();
-
-                let matches = ports.filter(port => {
-                    let info = port.getInfo();
-                    return info.usbVendorId == previousPort.vendorId && info.usbProductId == previousPort.productId;
-                });
-
-                if (matches.length == 1) {
-                    await this.open(matches[0]);
-                }
-            }
-
-            async disconnect() {
-                if (!this.#internal.port) {
-                    return;
-                }
-
-                this.#internal.reader.releaseLock();
-                await this.#internal.port.close();
-
-                this.#internal.port = null;
-                this.#internal.reader = null;
-                this.#internal.timeout = null;
-                this.#internal.emitter.emit('disconnected');
-            }
-
-            async open(port) {
-                this.#internal.port = port;
-
-                await this.#internal.port.open(this.#options);
-
-                let info = this.#internal.port.getInfo();
-                this.#internal.emitter.emit('connected', {
-                    type: 'serial',
-                    vendorId: info.usbVendorId || null,
-                    productId: info.usbProductId || null
-                });
-
-                let buffer = [];
-                console.log("Port opened, ready to read data");
-
-                while (port.readable) {
-                    this.#internal.reader = port.readable.getReader();
-                    console.log("Reader acquired");
-
-                    try {
-                        while (true) {
-                            const { value, done } = await this.#internal.reader.read();
-                            console.log("Data read:", value);
-
-                            if (this.#internal.timeout) {
-                                clearTimeout(this.#internal.timeout);
-                                this.#internal.timeout = null;
-                            }
-
-                            if (done) {
-                                this.#internal.reader.releaseLock();
-                                console.log("Done reading data");
-                                break;
-                            }
-
-                            if (value) {
-                                console.log("Buffering data:", value);
-                                buffer.push(...value);
-                            }
-
-                            this.#internal.timeout = setTimeout(() => {
-                                this.#parse(buffer);
-                                buffer = [];
-                            }, END_OF_TRANSMISSION_TIMEOUT);
+                // Use a text decoder to convert bytes to a string
+                decoder = new TextDecoder();
+                decoderStream = new ReadableStream({
+                    start(controller) {
+                        function read() {
+                            reader.read().then(({ done, value }) => {
+                                if (done) {
+                                    controller.close();
+                                    return;
+                                }
+                                const text = decoder.decode(value, { stream: true });
+                                controller.enqueue(text);
+                                read();
+                            });
                         }
-                    } catch (error) {
-                        console.log('Error reading data:', error);
-                        buffer = [];
+                        read();
                     }
-                }
+                });
+
+                // Start reading from the serial port
+                const readableStreamClosed = port.readable.pipeTo(decoderStream);
+                const readerStream = decoderStream.getReader();
+                readerStream.read().then(function processText({ done, value }) {
+                    if (!done) {
+                        barcodeElement.textContent = value;  // Display scanned barcode value
+                        readerStream.read().then(processText);
+                    }
+                });
+            } catch (err) {
+                statusElement.textContent = 'Status: Error - ' + err;
             }
+        });
 
-            #parse(buffer) {
-                let result = {
-                    value: String.fromCharCode.apply(null, buffer),
-                    bytes: [
-                        new Uint8Array(buffer)
-                    ]
-                };
-
-                console.log("Parsed value:", result.value);
-
-                if (result.value.endsWith('\n')) {
-                    result.value = result.value.slice(0, -1);
-                }
-
-                if (result.value.endsWith('\r')) {
-                    result.value = result.value.slice(0, -1);
-                }
-
-                // Check for barcode and emit data
-                console.log("Emitting barcode:", result.value);
-                this.#internal.emitter.emit('barcode', result);
+        // Disconnect the serial port when done
+        async function disconnect() {
+            if (reader) {
+                reader.cancel();
             }
-
-            addEventListener(n, f) {
-                this.#internal.emitter.on(n, f);
+            if (port) {
+                await port.close();
             }
+            statusElement.textContent = 'Status: Disconnected';
         }
-
-        // Create a WebSerialBarcodeScanner instance
-        const barcodeScanner = new WebSerialBarcodeScanner({
-            baudRate: 9600,
-            guessSymbology: true,
-        });
-
-        // Event listener to handle the barcode event
-        barcodeScanner.addEventListener('barcode', (data) => {
-            console.log("Received barcode:", data.value);
-            const barcodeList = document.getElementById('barcodeList');
-            const barcodeItem = document.createElement('li');
-            barcodeItem.textContent = `Scanned: ${data.value}`;
-            barcodeList.appendChild(barcodeItem);
-        });
-
-        // Event listener for the connect button
-        document.getElementById('connectButton').addEventListener('click', () => {
-            barcodeScanner.connect();
-            document.getElementById('status').textContent = "Status: Connecting...";
-        });
     </script>
 
 </body>
