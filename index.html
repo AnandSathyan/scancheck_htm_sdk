@@ -89,6 +89,7 @@
                     }
                 } catch (error) {
                     console.log('Could not connect! ' + error);
+                    document.getElementById('status').textContent = "Failed to connect to device.";
                 }
             }
 
@@ -129,7 +130,6 @@
                 await this.#internal.port.open(this.#options);
 
                 let info = this.#internal.port.getInfo();
-
                 this.#internal.emitter.emit('connected', {
                     type: 'serial',
                     vendorId: info.usbVendorId || null,
@@ -187,15 +187,8 @@
                     result.value = result.value.slice(0, -1);
                 }
 
-                if (result.value.startsWith(']')) {
-                    // For simplicity, assume it's already decoded
-                    result.symbology = 'EAN13';
-                }
-
-                if (this.#options.allowedSymbologies.length === 0 ||
-                    this.#options.allowedSymbologies.includes(result.symbology)) {
-                    this.#internal.emitter.emit('barcode', result);
-                }
+                // Check for barcode and emit data
+                this.#internal.emitter.emit('barcode', result);
             }
 
             addEventListener(n, f) {
@@ -218,7 +211,7 @@
         barcodeScanner.addEventListener('barcode', (data) => {
             const barcodeList = document.getElementById('barcode-list');
             const barcodeItem = document.createElement('li');
-            barcodeItem.textContent = `Scanned: ${data.value} (Symbology: ${data.symbology || 'Unknown'})`;
+            barcodeItem.textContent = `Scanned: ${data.value}`;
             barcodeList.appendChild(barcodeItem);
         });
 
