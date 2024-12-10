@@ -3,15 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RS232 Barcode Scanner</title>
+    <title>Display Scanned Barcode</title>
 </head>
 <body>
 
-    <h1>RS232 Barcode Scanner</h1>
-    <button id="connectButton">Connect to Scanner</button>
+    <h1>Barcode Scanner Output</h1>
     <p id="status">Status: Not connected</p>
     <h3>Scanned Barcode:</h3>
-    <p><strong id="barcode">None</strong></p> <!-- This will display the scanned barcode -->
+    <p><strong id="barcode">None</strong></p> <!-- Display scanned barcode -->
 
     <script>
         let port;
@@ -21,20 +20,22 @@
         const statusElement = document.getElementById("status");
         const barcodeElement = document.getElementById("barcode");
 
-        // Connect to the serial port
-        document.getElementById('connectButton').addEventListener('click', async () => {
+        // Assuming the connection to the serial port has already been established
+        async function startReading() {
             try {
-                // Request the user to connect to the serial port
-                port = await navigator.serial.requestPort();
-                await port.open({ baudRate: 9600 });  // Open the port at 9600 baud rate
+                // Assuming the port is already connected and opened
+                port = await navigator.serial.requestPort(); // Only request port if not already connected
+                await port.open({ baudRate: 9600 }); // Open the port
 
+                // Update the status to "Connected"
                 statusElement.textContent = 'Status: Connected';
 
                 // Create a reader for the port
                 reader = port.readable.getReader();
 
-                // Use a text decoder to convert bytes to a string
+                // Use a text decoder to convert byte data into string
                 decoder = new TextDecoder();
+
                 decoderStream = new ReadableStream({
                     start(controller) {
                         function read() {
@@ -52,30 +53,25 @@
                     }
                 });
 
-                // Start reading from the serial port
+                // Pipe the readable stream to the decoder stream
                 const readableStreamClosed = port.readable.pipeTo(decoderStream);
                 const readerStream = decoderStream.getReader();
+                
+                // Read barcode data and display it
                 readerStream.read().then(function processText({ done, value }) {
                     if (!done) {
-                        barcodeElement.textContent = value;  // Display scanned barcode value
+                        // Display scanned barcode on the webpage
+                        barcodeElement.textContent = value;
                         readerStream.read().then(processText);
                     }
                 });
             } catch (err) {
                 statusElement.textContent = 'Status: Error - ' + err;
             }
-        });
-
-        // Disconnect the serial port when done
-        async function disconnect() {
-            if (reader) {
-                reader.cancel();
-            }
-            if (port) {
-                await port.close();
-            }
-            statusElement.textContent = 'Status: Disconnected';
         }
+
+        // Initiate the reading process when the page loads (or when needed)
+        startReading();
     </script>
 
 </body>
